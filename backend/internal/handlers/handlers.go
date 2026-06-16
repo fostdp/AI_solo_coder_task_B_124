@@ -9,19 +9,27 @@ import (
 	"lingqu-dou-gate/internal/middleware"
 	"lingqu-dou-gate/internal/models"
 	"lingqu-dou-gate/internal/modules/alarm_mqtt"
+	"lingqu-dou-gate/internal/modules/cascade_scheduler"
+	"lingqu-dou-gate/internal/modules/design_comparator"
 	"lingqu-dou-gate/internal/modules/dtu_receiver"
 	"lingqu-dou-gate/internal/modules/hydraulic_sim"
 	"lingqu-dou-gate/internal/modules/scheduler_ga"
+	"lingqu-dou-gate/internal/modules/vessel_analyzer"
+	"lingqu-dou-gate/internal/modules/vr_lock_experience"
 	"lingqu-dou-gate/internal/services"
 )
 
 type Handler struct {
-	sensorService *services.SensorService
-	dtuReceiver   *dtu_receiver.DTUReceiver
-	hydraulicSim  *hydraulic_sim.HydraulicSimulator
-	schedulerGA   *scheduler_ga.GAScheduler
-	alarmMqtt     *alarm_mqtt.AlarmMqtt
-	metrics       *middleware.MetricsCollector
+	sensorService      *services.SensorService
+	dtuReceiver        *dtu_receiver.DTUReceiver
+	hydraulicSim       *hydraulic_sim.HydraulicSimulator
+	schedulerGA        *scheduler_ga.GAScheduler
+	alarmMqtt          *alarm_mqtt.AlarmMqtt
+	metrics            *middleware.MetricsCollector
+	designComparator   *design_comparator.DesignComparator
+	cascadeScheduler   *cascade_scheduler.CascadeScheduler
+	vesselAnalyzer     *vessel_analyzer.VesselAnalyzer
+	vrLockExperience   *vr_lock_experience.VRLockExperience
 }
 
 func NewHandler(
@@ -30,14 +38,22 @@ func NewHandler(
 	sched *scheduler_ga.GAScheduler,
 	alarm *alarm_mqtt.AlarmMqtt,
 	metrics *middleware.MetricsCollector,
+	dc *design_comparator.DesignComparator,
+	cs *cascade_scheduler.CascadeScheduler,
+	va *vessel_analyzer.VesselAnalyzer,
+	vr *vr_lock_experience.VRLockExperience,
 ) *Handler {
 	return &Handler{
-		sensorService: services.NewSensorService(),
-		dtuReceiver:   dtu,
-		hydraulicSim:  hydro,
-		schedulerGA:   sched,
-		alarmMqtt:     alarm,
-		metrics:       metrics,
+		sensorService:    services.NewSensorService(),
+		dtuReceiver:      dtu,
+		hydraulicSim:     hydro,
+		schedulerGA:      sched,
+		alarmMqtt:        alarm,
+		metrics:          metrics,
+		designComparator: dc,
+		cascadeScheduler: cs,
+		vesselAnalyzer:   va,
+		vrLockExperience: vr,
 	}
 }
 
@@ -400,7 +416,7 @@ func (h *Handler) DynastyComparison(c *gin.Context) {
 		direction = "upstream"
 	}
 
-	results := h.hydraulicSim.DynastyComparisonSync(*gate, wlUp, wlDown, opening, direction, req.Dynasties)
+	results := h.designComparator.Compare(*gate, wlUp, wlDown, opening, direction, req.Dynasties)
 	h.metrics.IncSimulation()
 	c.JSON(http.StatusOK, gin.H{"data": results, "gate": gin.H{
 		"id": gate.ID, "name": gate.Name,
@@ -422,7 +438,7 @@ func (h *Handler) OptimizeMultiStage(c *gin.Context) {
 	var req models.MultiStageOptimizeRequest
 	if err := c.ShouldBindJSON(&req); err == nil {
 	}
-	result := h.schedulerGA.MultiStageOptimizeSync(req)
+	result := h.cascadeScheduler.Optimize(req)
 	if result.Error != "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error})
 		return
@@ -491,7 +507,7 @@ func (h *Handler) ShipTypeEfficiencyAnalysis(c *gin.Context) {
 	if opening <= 0 {
 		opening = 0.8
 	}
-	reports := h.hydraulicSim.ShipTypeAnalysisSync(*gate, wlUp, wlDown, opening, req.ShipTypes)
+	reports := h.vesselAnalyzer.Analyze(*gate, wlUp, wlDown, opening, req.ShipTypes)
 	h.metrics.IncSimulation()
 	c.JSON(http.StatusOK, gin.H{
 		"data": reports,
@@ -507,4 +523,49 @@ func (h *Handler) ShipTypeEfficiencyAnalysis(c *gin.Context) {
 func (h *Handler) GetShipTypes(c *gin.Context) {
 	specs := models.GetShipTypeSpecs()
 	c.JSON(http.StatusOK, gin.H{"data": specs})
+}
+
+func (h *Handler) ListVRScenarios(c *gin.Context) {
+	scenarios := h.vrLockExperience.ListScenarios()
+	c.JSON(http.StatusOK, gin.H{"data": scenarios})
+}
+
+func (h *Handler) GetVRScenario(c *gin.Context) {
+	id := c.Param("id")
+	scenario, ok := h.vrLockExperience.GetScenario(id)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": scenario})
+}
+
+func (h *Handler) NewVRSession(c *gin.Context) {
+	var body struct {
+		ScenarioID string `json:"scenario_id"`
+		UserID     string `json:"user_id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		body.ScenarioID = "tang_upstream"
+	}
+	sess, err := h.vrLockExperience.NewSession(body.ScenarioID, body.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": sess})
+}
+
+func (h *Handler) SimulateVRScenario(c *gin.Context) {
+	id := c.Param("id")
+	result, err := h.vrLockExperience.SimulateScenario(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": result})
 }

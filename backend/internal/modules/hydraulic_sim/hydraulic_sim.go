@@ -606,7 +606,25 @@ func (h *HydraulicSimulator) calculateWeirFlowRateWithParams(
 }
 
 func (h *HydraulicSimulator) SimulateSync(req SimulateRequest) *SimulateResult {
-	return h.simulatePassage(req)
+	h.mu.RLock()
+	running := h.running
+	h.mu.RUnlock()
+	if !running {
+		return h.simulatePassage(req)
+	}
+	replyChan := make(chan *SimulateResult, 1)
+	req.ReplyChan = replyChan
+	select {
+	case h.requestChan <- req:
+	default:
+		return &SimulateResult{Error: &SimulatorError{Message: "simulator queue full"}}
+	}
+	select {
+	case result := <-replyChan:
+		return result
+	case <-h.stopChan:
+		return &SimulateResult{Error: &SimulatorError{Message: "simulator stopped"}}
+	}
 }
 
 func (h *HydraulicSimulator) DynastyComparisonSync(

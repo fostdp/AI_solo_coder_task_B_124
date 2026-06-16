@@ -14,9 +14,13 @@ import (
 	"lingqu-dou-gate/internal/handlers"
 	"lingqu-dou-gate/internal/middleware"
 	"lingqu-dou-gate/internal/modules/alarm_mqtt"
+	"lingqu-dou-gate/internal/modules/cascade_scheduler"
+	"lingqu-dou-gate/internal/modules/design_comparator"
 	"lingqu-dou-gate/internal/modules/dtu_receiver"
 	"lingqu-dou-gate/internal/modules/hydraulic_sim"
 	"lingqu-dou-gate/internal/modules/scheduler_ga"
+	"lingqu-dou-gate/internal/modules/vessel_analyzer"
+	"lingqu-dou-gate/internal/modules/vr_lock_experience"
 	"lingqu-dou-gate/internal/services"
 )
 
@@ -42,6 +46,11 @@ func main() {
 	schedulerGA := scheduler_ga.NewGAScheduler(2)
 	alarmMqtt := alarm_mqtt.NewAlarmMqtt(dtuReceiver.ValidatedDataChannel(), 2)
 
+	designComparator := design_comparator.NewDesignComparator(hydraulicSim)
+	cascadeScheduler := cascade_scheduler.NewCascadeScheduler()
+	vesselAnalyzer := vessel_analyzer.NewVesselAnalyzer(hydraulicSim)
+	vrLockExperience := vr_lock_experience.NewVRLockExperience(hydraulicSim)
+
 	metrics := middleware.GetMetricsCollector()
 
 	dtuReceiver.Start()
@@ -62,6 +71,10 @@ func main() {
 		schedulerGA,
 		alarmMqtt,
 		metrics,
+		designComparator,
+		cascadeScheduler,
+		vesselAnalyzer,
+		vrLockExperience,
 	)
 
 	// ======== pprof + Prometheus + expvar 管理端点（6060端口）========
@@ -130,11 +143,16 @@ func main() {
 		api.GET("/alerts", handler.GetAlerts)
 		api.POST("/alerts/:id/resolve", handler.ResolveAlert)
 		api.POST("/alerts/test", handler.TestAlert)
+
+		api.GET("/vr/scenarios", handler.ListVRScenarios)
+		api.GET("/vr/scenarios/:id", handler.GetVRScenario)
+		api.POST("/vr/sessions", handler.NewVRSession)
+		api.GET("/vr/scenarios/:id/simulate", handler.SimulateVRScenario)
 	}
 
 	addr := config.AppConfig.Server.Host + ":" + config.AppConfig.Server.Port
 	log.Printf("API server starting on %s", addr)
-	log.Printf("Modules: DTU=running, HydraulicSim=running, SchedulerGA=running, AlarmMQTT=running")
+	log.Printf("Modules: DTU=running, HydraulicSim=running, SchedulerGA=running, AlarmMQTT=running, DesignComparator=ok, CascadeScheduler=ok, VesselAnalyzer=ok, VRLockExperience=ok")
 	log.Printf("Endpoints: /debug/pprof /metrics /healthz on :6060")
 
 	go func() {
