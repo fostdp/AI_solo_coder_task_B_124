@@ -451,3 +451,103 @@ func TestFindGateFreeAfter_Empty(t *testing.T) {
 		t.Errorf("with no ranges, free time should equal input, got %v vs %v", freeAt, after)
 	}
 }
+
+func TestFindGateFreeAfterSorted_BinarySearch(t *testing.T) {
+	baseTime := time.Now()
+	ranges := []timeRange{
+		{start: baseTime, end: baseTime.Add(100 * time.Second)},
+		{start: baseTime.Add(200 * time.Second), end: baseTime.Add(350 * time.Second)},
+		{start: baseTime.Add(400 * time.Second), end: baseTime.Add(500 * time.Second)},
+	}
+
+	freeAt := findGateFreeAfterSorted(ranges, baseTime.Add(50*time.Second))
+	if freeAt.Before(baseTime.Add(100*time.Second)) {
+		t.Errorf("sorted free time should be after first range end, got %v", freeAt)
+	}
+
+	freeAt2 := findGateFreeAfterSorted(ranges, baseTime.Add(300*time.Second))
+	if freeAt2.Before(baseTime.Add(350*time.Second)) {
+		t.Errorf("sorted free time in gap should be after second range end, got %v", freeAt2)
+	}
+
+	freeAt3 := findGateFreeAfterSorted(ranges, baseTime.Add(600*time.Second))
+	if freeAt3.Before(baseTime.Add(600*time.Second)) {
+		t.Errorf("sorted free time after all ranges should be at or after input, got %v", freeAt3)
+	}
+}
+
+func TestFindGateFreeAfterSorted_Empty(t *testing.T) {
+	after := time.Now()
+	freeAt := findGateFreeAfterSorted(nil, after)
+	if !freeAt.Equal(after) {
+		t.Errorf("with no sorted ranges, free time should equal input, got %v vs %v", freeAt, after)
+	}
+}
+
+func TestInsertSorted(t *testing.T) {
+	baseTime := time.Now()
+	ranges := []timeRange{
+		{start: baseTime, end: baseTime.Add(100 * time.Second)},
+		{start: baseTime.Add(200 * time.Second), end: baseTime.Add(350 * time.Second)},
+	}
+
+	result := insertSorted(ranges, timeRange{
+		start: baseTime.Add(150 * time.Second),
+		end:   baseTime.Add(180 * time.Second),
+	})
+
+	if len(result) != 3 {
+		t.Fatalf("expected 3 ranges after insert, got %d", len(result))
+	}
+	if result[1].start.After(result[2].start) {
+		t.Error("insertSorted should maintain sorted order")
+	}
+	if result[0].start.After(result[1].start) {
+		t.Error("insertSorted should maintain sorted order")
+	}
+}
+
+func TestMultiStageOptimize_ShipWaitTimeout(t *testing.T) {
+	ga := makeTestGA()
+	now := time.Now()
+	ships := make([]models.ScheduleShip, 50)
+	for i := 0; i < 50; i++ {
+		ships[i] = models.ScheduleShip{
+			ShipID: uint(i + 1), ShipName: "拥堵船", Priority: 3,
+			ArrivalTime: now,
+			Direction:   "upstream",
+		}
+	}
+	req := models.MultiStageOptimizeRequest{
+		GateIDs: []uint{1, 2, 3},
+		Ships:   ships,
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("should not panic with congested fleet: %v", r)
+		}
+	}()
+	result := ga.MultiStageOptimizeSync(req)
+	if result == nil {
+		t.Fatal("result should not be nil even with congested fleet")
+	}
+}
+
+func TestMultiStageOptimize_GateSeqLengthCap(t *testing.T) {
+	ga := makeTestGA()
+	ships := makeTestShips(3)
+	req := models.MultiStageOptimizeRequest{
+		GateIDs: makeTestGateIDs(),
+		Ships:   ships,
+	}
+	result := ga.MultiStageOptimizeSync(req)
+	if result == nil {
+		t.Fatal("result should not be nil")
+	}
+	for _, r := range result.Routes {
+		if len(r.GateSequence) > 8 {
+			t.Errorf("gate sequence length %d exceeds cap of 8", len(r.GateSequence))
+		}
+	}
+}

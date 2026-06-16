@@ -812,22 +812,32 @@ func (h *HydraulicSimulator) ShipTypeAnalysisSync(
 			throughputTon = spec.CapacityTon * (86400.0 / totalCycle) * 0.8
 		}
 		conflictRate := 0.0
-		switch {
-		case spec.LengthMax > 38:
-			conflictRate = 0.35
-		case spec.LengthMax > 26:
-			conflictRate = 0.18
-		case spec.LengthMax > 14:
-			conflictRate = 0.08
-		default:
-			conflictRate = 0.02
+		occupancy := spec.ChamberOccupancy
+		if occupancy <= 0 {
+			occupancy = spec.LengthMax * spec.WidthMax / (gate.ChamberLength * gate.ChamberWidth)
+			if occupancy > 1 {
+				occupancy = 1
+			}
 		}
+		if occupancy > 0.55 {
+			conflictRate = 0.25 + (occupancy-0.55)*1.2
+		} else if occupancy > 0.30 {
+			conflictRate = 0.08 + (occupancy-0.30)*0.68
+		} else if occupancy > 0.10 {
+			conflictRate = 0.02 + (occupancy-0.10)*0.3
+		} else {
+			conflictRate = occupancy * 0.2
+		}
+		if conflictRate > 0.6 {
+			conflictRate = 0.6
+		}
+		resistancePenalty := 1.0 + spec.ResistanceCoeff*occupancy*10
 		effIdx := 0.0
 		if totalCycle > 0 {
 			timeEff := 1 - math.Min(1, totalCycle/2400)
 			waterEff := 1 - math.Min(1, waterPerTon/20)
 			priorityBoost := float64(spec.BasePriority) / 6.0
-			effIdx = (timeEff*40 + waterEff*35 + priorityBoost*25)
+			effIdx = (timeEff*40 + waterEff*35 + priorityBoost*25) / resistancePenalty
 		}
 		if effIdx > 100 {
 			effIdx = 100

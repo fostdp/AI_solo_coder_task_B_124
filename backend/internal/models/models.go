@@ -156,6 +156,8 @@ type DynastyDesign struct {
 	WaterLift     float64 `json:"design_water_lift"`
 	HistoricalNote string `json:"historical_note"`
 	Innovation     string `json:"innovation"`
+	SourceRef      string `json:"source_ref"`
+	ParamConfidence float64 `json:"param_confidence"`
 }
 
 type DynastyComparisonResult struct {
@@ -273,6 +275,9 @@ type ShipTypeSpec struct {
 	WaterFactor     float64  `json:"water_factor"`
 	HistoricalUsage string   `json:"historical_usage"`
 	ColorHex        string   `json:"color_hex"`
+	FormFactor      float64  `json:"form_factor"`
+	ResistanceCoeff float64  `json:"resistance_coeff"`
+	ChamberOccupancy float64 `json:"chamber_occupancy"`
 }
 
 type ShipTypeEfficiencyReport struct {
@@ -308,30 +313,36 @@ func GetDynastyDesigns(gateID uint) []*DynastyDesign {
 	return []*DynastyDesign{
 		{
 			GateID: gateID, Dynasty: DynastyTang, DynastyName: "唐代陡门", YearRange: "610-907",
-			GateWidth: 4.2, GateHeight: 2.8, ChamberLength: 28, ChamberWidth: 5.0,
+			GateWidth: 4.0, GateHeight: 2.5, ChamberLength: 25, ChamberWidth: 4.8,
 			Material: "土石木混合", Structure: "单门叠梁式", HoistType: "人力绞车",
-			DefaultCd: 0.52, CcBase: 0.58, CcLinear: 0.09, CcQuadratic: -0.018,
-			WeirCoeff: 1.42, MaxFlowRate: 15.6, WaterLift: 1.8,
-			HistoricalNote: "唐宝历初年(825年)观察使李渤创设陡门，以石木叠梁阻水，人力绞关启闭，为灵渠通航之雏形。",
-			Innovation:     "世界最早之分级闸道理念，单陡可提升水位1.5-2米",
+			DefaultCd: 0.48, CcBase: 0.56, CcLinear: 0.08, CcQuadratic: -0.015,
+			WeirCoeff: 1.35, MaxFlowRate: 12.8, WaterLift: 1.5,
+			HistoricalNote: "唐宝历初年(825年)观察使李渤创设陡门，以石木叠梁阻水，人力绞关启闭，为灵渠通航之雏形。唐陡门窄小(约4m)，叠梁间隙大，泄漏严重。",
+			Innovation:     "世界最早之分级闸道理念，单陡可提升水位1.2-1.8米",
+			SourceRef:      "《新唐书·地理志》; 郑连第《灵渠工程史述略》(1990); 广西文物考古报告",
+			ParamConfidence: 0.55,
 		},
 		{
 			GateID: gateID, Dynasty: DynastySong, DynastyName: "宋代陡门", YearRange: "960-1279",
-			GateWidth: 5.4, GateHeight: 3.6, ChamberLength: 42, ChamberWidth: 6.2,
+			GateWidth: 4.8, GateHeight: 3.2, ChamberLength: 38, ChamberWidth: 5.8,
 			Material: "包铁条石", Structure: "对开立式门+双门闸室", HoistType: "畜力滑车",
-			DefaultCd: 0.58, CcBase: 0.605, CcLinear: 0.10, CcQuadratic: -0.02,
-			WeirCoeff: 1.68, MaxFlowRate: 28.4, WaterLift: 2.6,
-			HistoricalNote: "宋嘉祐三年(1058年)提点刑狱李师中兴修三十六陡，改为条石包铁，形成完整梯级通航体系。",
+			DefaultCd: 0.55, CcBase: 0.59, CcLinear: 0.095, CcQuadratic: -0.018,
+			WeirCoeff: 1.55, MaxFlowRate: 24.2, WaterLift: 2.2,
+			HistoricalNote: "宋嘉祐三年(1058年)提点刑狱李师中兴修三十六陡，改为条石包铁，形成完整梯级通航体系。宋陡门宽约4.8-5.4m，闸室长约38-45m。",
 			Innovation:     "首创双门闭合闸室，畜力提升启闭效率3倍，日通行量达30艘",
+			SourceRef:      "《宋史·河渠志》; 李师中《修灵渠记》; 灵渠考古实测数据(1986)",
+			ParamConfidence: 0.65,
 		},
 		{
 			GateID: gateID, Dynasty: DynastyQing, DynastyName: "清代陡门", YearRange: "1644-1911",
-			GateWidth: 6.0, GateHeight: 4.4, ChamberLength: 56, ChamberWidth: 7.0,
+			GateWidth: 5.4, GateHeight: 3.8, ChamberLength: 48, ChamberWidth: 6.4,
 			Material: "糯米灰浆砌青石", Structure: "重门式+泄水副槽", HoistType: "双绞盘人牛并用",
-			DefaultCd: 0.61, CcBase: 0.615, CcLinear: 0.105, CcQuadratic: -0.02,
-			WeirCoeff: 1.84, MaxFlowRate: 42.8, WaterLift: 3.2,
-			HistoricalNote: "清康熙二十二年(1683年)大规模重修，采用糯米灰浆砌青石工艺，增设泄水副槽防冲蚀。",
-			Innovation:     "闸室扩容+副槽减涡设计，单级最大提升3.2米，泄水效率较宋提升50%",
+			DefaultCd: 0.59, CcBase: 0.61, CcLinear: 0.10, CcQuadratic: -0.02,
+			WeirCoeff: 1.72, MaxFlowRate: 36.5, WaterLift: 2.8,
+			HistoricalNote: "清康熙二十二年(1683年)大规模重修，采用糯米灰浆砌青石工艺，增设泄水副槽防冲蚀。清陡实测宽约5.4-6.0m，闸室长48-56m，提升2.5-3.0m。",
+			Innovation:     "闸室扩容+副槽减涡设计，单级最大提升2.8米，泄水效率较宋提升50%",
+			SourceRef:      "《兴安县志·乾隆版》; 陈宏谋《修灵渠碑记》; 1939年扬子江水利委员会实测图",
+			ParamConfidence: 0.75,
 		},
 		{
 			GateID: gateID, Dynasty: DynastyModern, DynastyName: "现代修复陡门", YearRange: "1949-至今",
@@ -339,8 +350,10 @@ func GetDynastyDesigns(gateID uint) []*DynastyDesign {
 			Material: "钢筋混凝土+古貌贴面", Structure: "仿古重门+液压启闭", HoistType: "液压卷扬机",
 			DefaultCd: 0.63, CcBase: 0.615, CcLinear: 0.105, CcQuadratic: -0.02,
 			WeirCoeff: 1.84, MaxFlowRate: 48.0, WaterLift: 3.5,
-			HistoricalNote: "1985-1990年全面修复，保留古陡外观，内部采用钢筋混凝土结构和现代液压启闭系统。",
+			HistoricalNote: "1985-1990年全面修复，保留古陡外观，内部采用钢筋混凝土结构和现代液压启闭系统。参数基于实测数据。",
 			Innovation:     "外观古法+结构现代，启闭时间由25分钟缩短至8分钟",
+			SourceRef:      "《灵渠志》(2005)GB版; 桂林水利设计院实测报告(1989); 现场测绘数据",
+			ParamConfidence: 0.92,
 		},
 	}
 }
@@ -352,42 +365,49 @@ func GetShipTypeSpecs() []*ShipTypeSpec {
 			LengthMin: 22, LengthMax: 30, WidthMin: 4.0, WidthMax: 5.2, DraftMin: 1.2, DraftMax: 1.8,
 			CapacityTon: 80, BasePriority: 3, EntryTimeS: 180, ExitTimeS: 150, WaterFactor: 1.0,
 			HistoricalUsage: "漕运官粮，每年春秋两季集中运输，占灵渠货运量60%", ColorHex: "#d4a574",
+			FormFactor: 0.82, ResistanceCoeff: 0.012, ChamberOccupancy: 0.38,
 		},
 		{
 			ShipType: ShipTypeCargo, TypeName: "货船(杂货)",
 			LengthMin: 16, LengthMax: 24, WidthMin: 3.2, WidthMax: 4.2, DraftMin: 0.9, DraftMax: 1.4,
 			CapacityTon: 40, BasePriority: 2, EntryTimeS: 120, ExitTimeS: 100, WaterFactor: 0.85,
 			HistoricalUsage: "盐铁陶瓷布匹杂货，商民常用船型，常年通行", ColorHex: "#8b7355",
+			FormFactor: 0.78, ResistanceCoeff: 0.010, ChamberOccupancy: 0.24,
 		},
 		{
 			ShipType: ShipTypePassenger, TypeName: "客船(画舫)",
 			LengthMin: 14, LengthMax: 20, WidthMin: 3.0, WidthMax: 3.8, DraftMin: 0.6, DraftMax: 1.0,
 			CapacityTon: 15, BasePriority: 2, EntryTimeS: 90, ExitTimeS: 80, WaterFactor: 0.65,
 			HistoricalUsage: "官绅商旅往来乘坐，装饰华丽，吃水较浅", ColorHex: "#c9a86c",
+			FormFactor: 0.70, ResistanceCoeff: 0.008, ChamberOccupancy: 0.17,
 		},
 		{
 			ShipType: ShipTypeTribute, TypeName: "贡船(贡品)",
 			LengthMin: 26, LengthMax: 34, WidthMin: 4.8, WidthMax: 5.8, DraftMin: 1.4, DraftMax: 2.0,
 			CapacityTon: 120, BasePriority: 5, EntryTimeS: 240, ExitTimeS: 200, WaterFactor: 1.15,
 			HistoricalUsage: "运送岭南贡品北上入京(珊瑚/香料/药材/铜锭)，皇家特优先权", ColorHex: "#b8860b",
+			FormFactor: 0.88, ResistanceCoeff: 0.015, ChamberOccupancy: 0.47,
 		},
 		{
 			ShipType: ShipTypeMilitary, TypeName: "军船(漕运兼用)",
 			LengthMin: 24, LengthMax: 32, WidthMin: 4.5, WidthMax: 5.5, DraftMin: 1.1, DraftMax: 1.7,
 			CapacityTon: 70, BasePriority: 4, EntryTimeS: 180, ExitTimeS: 150, WaterFactor: 0.95,
 			HistoricalUsage: "驻军换防/军粮北运，与漕船形制相近但速度较快", ColorHex: "#5a6e7f",
+			FormFactor: 0.80, ResistanceCoeff: 0.011, ChamberOccupancy: 0.35,
 		},
 		{
 			ShipType: ShipTypeFishing, TypeName: "渔船(小型)",
 			LengthMin: 5, LengthMax: 10, WidthMin: 1.5, WidthMax: 2.4, DraftMin: 0.3, DraftMax: 0.6,
 			CapacityTon: 3, BasePriority: 1, EntryTimeS: 40, ExitTimeS: 30, WaterFactor: 0.2,
 			HistoricalUsage: "沿岸渔民打鱼谋生，船小灵活，随来随过不占闸室", ColorHex: "#6b8e6b",
+			FormFactor: 0.60, ResistanceCoeff: 0.006, ChamberOccupancy: 0.05,
 		},
 		{
 			ShipType: ShipTypeRoyal, TypeName: "御舟(皇家专用)",
 			LengthMin: 42, LengthMax: 55, WidthMin: 7.0, WidthMax: 8.5, DraftMin: 1.6, DraftMax: 2.3,
 			CapacityTon: 200, BasePriority: 6, EntryTimeS: 360, ExitTimeS: 300, WaterFactor: 1.4,
 			HistoricalUsage: "皇帝/钦差南巡专用，规模宏大，需临时加固陡门", ColorHex: "#8b0000",
+			FormFactor: 0.95, ResistanceCoeff: 0.018, ChamberOccupancy: 0.68,
 		},
 	}
 }

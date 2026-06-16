@@ -31,6 +31,10 @@ var VETest = (function () {
         testCanvasRender();
         testBoundaryValues();
         testAbnormalInput();
+        testMobileDetection();
+        testMobileFrameInterval();
+        testDOMThrottle();
+        testCanvasPerformanceBaseline();
 
         console.log('=== 测试结果: ' + passed + ' passed, ' + failed + ' failed ===');
         if (errors.length > 0) {
@@ -217,6 +221,54 @@ var VETest = (function () {
         }
         var elapsed = performance.now() - start;
         assert(elapsed < 500, '100次slider交互应在500ms内完成 (实际' + Math.round(elapsed) + 'ms)');
+    }
+
+    function testMobileDetection() {
+        var state = VirtualExperience._state;
+        assert(state !== undefined, 'state对象可访问');
+        if (state) {
+            assert(typeof state.isMobile === 'boolean', 'isMobile字段为boolean');
+            assert(typeof state.frameInterval === 'number', 'frameInterval字段为number');
+            assert(state.frameInterval >= 16, 'frameInterval >= 16ms (至少60fps上限)');
+            assert(state.frameInterval <= 67, 'frameInterval <= 67ms (至少15fps下限)');
+        }
+    }
+
+    function testMobileFrameInterval() {
+        var state = VirtualExperience._state;
+        if (state && state.isMobile) {
+            assert(state.frameInterval >= 40, '移动端frameInterval >= 40ms (不超过25fps)');
+        } else if (state) {
+            assert(state.frameInterval <= 40, '桌面端frameInterval <= 40ms (至少25fps)');
+        }
+    }
+
+    function testCanvasPerformanceBaseline() {
+        var canvas = document.getElementById('ve-canvas');
+        if (!canvas) { assert(true, 'Canvas性能基线: 跳过(Canvas不存在)'); return; }
+
+        var ctx = canvas.getContext('2d');
+        var iterations = state_isMobile() ? 30 : 60;
+        var start = performance.now();
+        for (var i = 0; i < iterations; i++) {
+            if (VirtualExperience._drawVECanvas) VirtualExperience._drawVECanvas();
+        }
+        var elapsed = performance.now() - start;
+        var perFrame = elapsed / iterations;
+        assert(perFrame < 50, iterations + '帧Canvas绘制平均' + perFrame.toFixed(1) + 'ms < 50ms/帧');
+    }
+
+    function state_isMobile() {
+        var state = VirtualExperience._state;
+        return state && state.isMobile;
+    }
+
+    function testDOMThrottle() {
+        var state = VirtualExperience._state;
+        if (state) {
+            assert(typeof state.lastUpText === 'string', 'lastUpText节流缓存存在');
+            assert(typeof state.lastPhase === 'string', 'lastPhase节流缓存存在');
+        }
     }
 
     return { runAll: runAll };

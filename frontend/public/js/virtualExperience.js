@@ -22,7 +22,14 @@ var VirtualExperience = (function () {
         shipSpec: null,
         direction: 'upstream',
         animId: null,
-        running: false
+        running: false,
+        lastFrameTime: 0,
+        frameInterval: 33,
+        lastPhase: '',
+        lastUpText: '', lastChText: '', lastDownText: '',
+        lastStepsHTML: '', lastTipText: '',
+        bgCacheCanvas: null, bgCacheDirty: true,
+        isMobile: false
     };
 
     var SHIP_SPECS = {
@@ -49,6 +56,10 @@ var VirtualExperience = (function () {
     function init() {
         buildView();
         bindShipControls();
+        state.isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+        state.frameInterval = state.isMobile ? 50 : 33;
+        state.bgCacheCanvas = document.createElement('canvas');
+        state.bgCacheDirty = true;
     }
 
     function buildView() {
@@ -274,8 +285,15 @@ var VirtualExperience = (function () {
         state.score.total = Math.round(state.score.time + state.score.safety + state.score.water);
     }
 
-    function loop() {
+    function loop(timestamp) {
         if (!state.running && state.phase === 'idle') { state.animId = null; drawVECanvas(); return; }
+
+        if (!timestamp) timestamp = performance.now();
+        if (timestamp - state.lastFrameTime < state.frameInterval) {
+            state.animId = requestAnimationFrame(loop);
+            return;
+        }
+        state.lastFrameTime = timestamp;
 
         state.gateOpening += (state.targetOpening - state.gateOpening) * 0.08;
 
@@ -320,9 +338,9 @@ var VirtualExperience = (function () {
             window.gateScene.setWaterLevels(state.upstreamLevel, state.downstreamLevel);
         }
         drawVECanvas();
-        updateWaterLabels();
-        updateSteps();
-        updateTip();
+        updateWaterLabelsThrottled();
+        updateStepsThrottled();
+        updateTipThrottled();
 
         state.animId = requestAnimationFrame(loop);
     }
@@ -368,6 +386,16 @@ var VirtualExperience = (function () {
         document.getElementById('ve-down').textContent = (2 + state.downstreamLevel * mul).toFixed(2);
     }
 
+    function updateWaterLabelsThrottled() {
+        var mul = 10;
+        var up = (2 + state.upstreamLevel * mul).toFixed(2);
+        var ch = (2 + state.chamberLevel * mul).toFixed(2);
+        var dn = (2 + state.downstreamLevel * mul).toFixed(2);
+        if (up !== state.lastUpText) { document.getElementById('ve-up').textContent = up; state.lastUpText = up; }
+        if (ch !== state.lastChText) { document.getElementById('ve-chamber').textContent = ch; state.lastChText = ch; }
+        if (dn !== state.lastDownText) { document.getElementById('ve-down').textContent = dn; state.lastDownText = dn; }
+    }
+
     function updateScorePanel() {
         document.getElementById('ve-s-time').textContent = state.score.time;
         document.getElementById('ve-s-safe').textContent = state.score.safety;
@@ -394,6 +422,13 @@ var VirtualExperience = (function () {
         document.getElementById('ve-phase-label').textContent = p ? p.label : '待开始';
     }
 
+    function updateStepsThrottled() {
+        if (state.phase !== state.lastPhase) {
+            updateSteps();
+            state.lastPhase = state.phase;
+        }
+    }
+
     function updateTip() {
         var p = PHASES.find(function (x) { return x.key === state.phase; });
         var el = document.getElementById('ve-tip');
@@ -412,6 +447,12 @@ var VirtualExperience = (function () {
         el.textContent = tips[state.phase] || p.tip;
     }
 
+    function updateTipThrottled() {
+        if (state.phase !== state.lastPhase) {
+            updateTip();
+        }
+    }
+
     function drawVECanvas() {
         var c = document.getElementById('ve-canvas');
         if (!c) return;
@@ -424,8 +465,9 @@ var VirtualExperience = (function () {
         sky.addColorStop(0, '#1a3a5a'); sky.addColorStop(1, '#0a1628');
         ctx.fillStyle = sky; ctx.fillRect(0, 0, w, h * 0.5);
 
+        var starCount = state.isMobile ? 15 : 40;
         ctx.fillStyle = 'rgba(255,255,255,0.5)';
-        for (var s = 0; s < 40; s++) {
+        for (var s = 0; s < starCount; s++) {
             ctx.fillRect((s * 73) % w, (s * 37) % (h * 0.4), 1.5, 1.5);
         }
 
@@ -441,14 +483,19 @@ var VirtualExperience = (function () {
         ctx.fillStyle = stoneColor;
         ctx.fillRect(0, baseY, w, h - baseY);
 
-        ctx.fillStyle = 'rgba(255,255,255,0.08)';
-        for (var b = 0; b < 30; b++) {
-            ctx.fillRect(Math.random() * w, baseY + Math.random() * (h - baseY), 8 + Math.random() * 20, 2);
+        if (!state.isMobile) {
+            ctx.fillStyle = 'rgba(255,255,255,0.08)';
+            for (var b = 0; b < 15; b++) {
+                ctx.fillRect((b * 97) % w, baseY + (b * 23) % (h - baseY), 8 + (b * 7) % 20, 2);
+            }
         }
 
         var wUpH = waterHeight(state.upstreamLevel);
         var wDownH = waterHeight(state.downstreamLevel);
         var wChH = waterHeight(state.chamberLevel);
+
+        var waveStep = state.isMobile ? 16 : 8;
+        var waveRows = state.isMobile ? 2 : 3;
 
         function drawWater(x1, x2, yTop, color) {
             var grad = ctx.createLinearGradient(0, yTop, 0, baseY);
@@ -456,11 +503,11 @@ var VirtualExperience = (function () {
             ctx.fillStyle = grad;
             ctx.fillRect(x1, yTop, x2 - x1, baseY - yTop);
             ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1;
-            for (var wv = 0; wv < 4; wv++) {
-                var wy = yTop + wv * 8 + 3;
+            for (var wv = 0; wv < waveRows; wv++) {
+                var wy = yTop + wv * 10 + 3;
                 ctx.beginPath();
-                for (var xw = x1; xw < x2; xw += 6) {
-                    ctx.lineTo(xw, wy + Math.sin((xw + Date.now() / 300) * 0.03 + wv) * 1.5);
+                for (var xw = x1; xw < x2; xw += waveStep) {
+                    ctx.lineTo(xw, wy + Math.sin((xw + Date.now() / 400) * 0.025 + wv) * 1.5);
                 }
                 ctx.stroke();
             }
@@ -565,5 +612,5 @@ var VirtualExperience = (function () {
         var v = document.getElementById('ve-view'); if (v) v.style.display = 'none';
     }
 
-    return { init: init, show: show, hide: hide };
+    return { init: init, show: show, hide: hide, _state: state, _drawVECanvas: drawVECanvas };
 })();

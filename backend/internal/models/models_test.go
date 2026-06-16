@@ -57,6 +57,18 @@ func TestGetDynastyDesigns_PhysicalConsistency(t *testing.T) {
 		if d.WeirCoeff <= 0 {
 			t.Errorf("dynasty %s: weir coefficient should be positive", d.Dynasty)
 		}
+		if d.SourceRef == "" {
+			t.Errorf("dynasty %s: source reference should not be empty (literature citation required)", d.Dynasty)
+		}
+		if d.ParamConfidence <= 0 || d.ParamConfidence > 1 {
+			t.Errorf("dynasty %s: param confidence %f should be in (0,1]", d.Dynasty, d.ParamConfidence)
+		}
+		if d.Dynasty == DynastyTang && d.ParamConfidence > 0.7 {
+			t.Errorf("tang dynasty confidence %f should be <=0.7 (limited archaeological data)", d.ParamConfidence)
+		}
+		if d.Dynasty == DynastyModern && d.ParamConfidence < 0.8 {
+			t.Errorf("modern dynasty confidence %f should be >=0.8 (measured data available)", d.ParamConfidence)
+		}
 	}
 }
 
@@ -120,6 +132,15 @@ func TestGetShipTypeSpecs_PhysicalConsistency(t *testing.T) {
 		}
 		if s.BasePriority < 1 || s.BasePriority > 6 {
 			t.Errorf("ship %s: base priority %d should be in [1,6]", s.ShipType, s.BasePriority)
+		}
+		if s.FormFactor <= 0 || s.FormFactor > 1 {
+			t.Errorf("ship %s: form factor %f should be in (0,1]", s.ShipType, s.FormFactor)
+		}
+		if s.ResistanceCoeff <= 0 {
+			t.Errorf("ship %s: resistance coeff should be positive", s.ShipType)
+		}
+		if s.ChamberOccupancy <= 0 || s.ChamberOccupancy > 1 {
+			t.Errorf("ship %s: chamber occupancy %f should be in (0,1]", s.ShipType, s.ChamberOccupancy)
 		}
 	}
 }
@@ -212,5 +233,58 @@ func TestShipTypeString(t *testing.T) {
 		if string(tt.s) != tt.v {
 			t.Errorf("expected %s, got %s", tt.v, string(tt.s))
 		}
+	}
+}
+
+func TestDynastyDesigns_ConfidenceProgression(t *testing.T) {
+	designs := GetDynastyDesigns(1)
+	for i := 1; i < len(designs); i++ {
+		prev := designs[i-1]
+		curr := designs[i]
+		if curr.ParamConfidence < prev.ParamConfidence {
+			t.Errorf("confidence should not decrease: %s (%.2f) -> %s (%.2f)",
+				prev.Dynasty, prev.ParamConfidence, curr.Dynasty, curr.ParamConfidence)
+		}
+	}
+}
+
+func TestDynastyDesigns_SourceRefUnique(t *testing.T) {
+	designs := GetDynastyDesigns(1)
+	refs := make(map[string]bool)
+	for _, d := range designs {
+		if refs[d.SourceRef] {
+			t.Errorf("duplicate source ref: %s", d.SourceRef)
+		}
+		refs[d.SourceRef] = true
+	}
+}
+
+func TestShipTypeSpecs_ResistanceModelConsistency(t *testing.T) {
+	specs := GetShipTypeSpecs()
+	for _, s := range specs {
+		resistancePenalty := 1.0 + s.ResistanceCoeff*s.ChamberOccupancy*10
+		if resistancePenalty <= 1.0 {
+			t.Errorf("ship %s: resistancePenalty %f should be >1.0", s.ShipType, resistancePenalty)
+		}
+		if resistancePenalty > 2.0 {
+			t.Errorf("ship %s: resistancePenalty %f should be <=2.0 (reasonable range)", s.ShipType, resistancePenalty)
+		}
+	}
+}
+
+func TestShipTypeSpecs_LargeShipHigherOccupancy(t *testing.T) {
+	specs := GetShipTypeSpecs()
+	fishing := ShipTypeSpec{}
+	royal := ShipTypeSpec{}
+	for _, s := range specs {
+		if s.ShipType == ShipTypeFishing {
+			fishing = s
+		}
+		if s.ShipType == ShipTypeRoyal {
+			royal = s
+		}
+	}
+	if fishing.ChamberOccupancy >= royal.ChamberOccupancy {
+		t.Errorf("fishing occupancy (%.2f) should be < royal (%.2f)", fishing.ChamberOccupancy, royal.ChamberOccupancy)
 	}
 }

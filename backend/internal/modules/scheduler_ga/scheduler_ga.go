@@ -784,6 +784,13 @@ func (ga *GAScheduler) MultiStageOptimizeSync(req models.MultiStageOptimizeReque
 		}
 	}
 
+	segByFrom := map[uint]models.CanalSegment{}
+	segByTo := map[uint]models.CanalSegment{}
+	for _, seg := range segments {
+		segByFrom[seg.FromGateID] = seg
+		segByTo[seg.ToGateID] = seg
+	}
+
 	speedFactor := req.TravelSpeedFactor
 	if speedFactor <= 0 {
 		speedFactor = 1.0
@@ -799,6 +806,11 @@ func (ga *GAScheduler) MultiStageOptimizeSync(req models.MultiStageOptimizeReque
 	totalTravel := 0.0
 	totalWater := 0.0
 
+	maxGateSeqLen := len(req.GateIDs)
+	if maxGateSeqLen > 8 {
+		maxGateSeqLen = 8
+	}
+
 	sortedShips := make([]models.ScheduleShip, len(ships))
 	copy(sortedShips, ships)
 	sort.Slice(sortedShips, func(a, b int) bool {
@@ -806,6 +818,8 @@ func (ga *GAScheduler) MultiStageOptimizeSync(req models.MultiStageOptimizeReque
 		pb := -float64(sortedShips[b].Priority)*1e6 + float64(sortedShips[b].ArrivalTime.Unix())
 		return pa < pb
 	})
+
+	maxWaitPerShip := 7200.0
 
 	for _, ship := range sortedShips {
 		direction := ship.Direction
@@ -820,8 +834,8 @@ func (ga *GAScheduler) MultiStageOptimizeSync(req models.MultiStageOptimizeReque
 		} else {
 			gateSeq = append(gateSeq, req.GateIDs...)
 		}
-		if len(gateSeq) > 6 {
-			gateSeq = gateSeq[:6]
+		if len(gateSeq) > maxGateSeqLen {
+			gateSeq = gateSeq[:maxGateSeqLen]
 		}
 
 		shipArrival := ship.ArrivalTime
@@ -839,14 +853,27 @@ func (ga *GAScheduler) MultiStageOptimizeSync(req models.MultiStageOptimizeReque
 		}
 
 		currentTime := shipArrival
+		shipWait := 0.0
+		shipTruncated := false
+
 		for i, gid := range gateSeq {
 			gate := gatesMap[gid]
 			if gate == nil {
 				continue
 			}
+			if shipWait > maxWaitPerShip {
+				shipTruncated = true
+				break
+			}
 
-			baseChamberArea := 420.0
-			headDiff := 3.8
+			baseChamberArea := gate.ChamberLength * gate.ChamberWidth
+			if baseChamberArea <= 0 {
+				baseChamberArea = 420.0
+			}
+			headDiff := gate.MaxWaterLevelUp - gate.MinWaterLevelDown
+			if headDiff <= 0 {
+				headDiff = 3.8
+			}
 			baseFlow := 32.0
 			fillTimeSec := (baseChamberArea * headDiff) / baseFlow * 1.1
 			drainTimeSec := fillTimeSec * 0.95
@@ -855,12 +882,19 @@ func (ga *GAScheduler) MultiStageOptimizeSync(req models.MultiStageOptimizeReque
 
 			var travelToNext float64
 			if i < len(gateSeq)-1 {
-				for _, seg := range segments {
-					if (seg.FromGateID == gid && direction == "downstream") ||
-						(seg.ToGateID == gid && direction == "upstream") {
-						travelToNext = seg.TravelTimeS / speedFactor
-						break
+				nextGid := gateSeq[i+1]
+				var segFound *models.CanalSegment
+				if direction == "downstream" {
+					if s, ok := segByFrom[gid]; ok && s.ToGateID == nextGid {
+						segFound = &s
 					}
+				} else {
+					if s, ok := segByTo[gid]; ok && s.FromGateID == nextGid {
+						segFound = &s
+					}
+				}
+				if segFound != nil {
+					travelToNext = segFound.TravelTimeS / speedFactor
 				}
 				if travelToNext <= 0 {
 					travelToNext = 400 / speedFactor
@@ -868,19 +902,21 @@ func (ga *GAScheduler) MultiStageOptimizeSync(req models.MultiStageOptimizeReque
 			}
 
 			segKey := direction + "_" + itoa(int(gid))
-			if segmentShips[segKey] > 0 && travelToNext < 300 {
+			if segmentShips[segKey] > 2 && travelToNext < 300 {
 				conflictCount++
-				currentTime = currentTime.Add(180 * time.Second)
+				currentTime = currentTime.Add(120 * time.Second)
 			}
 			segmentShips[segKey]++
 
 			arrivalAtGate := currentTime
-			gateFree := findGateFreeAfter(gateUsed[gid], arrivalAtGate)
+			sortedRanges := gateUsed[gid]
+			gateFree := findGateFreeAfterSorted(sortedRanges, arrivalAtGate)
 			waitS := gateFree.Sub(arrivalAtGate).Seconds()
 			if waitS < 0 {
 				waitS = 0
 			}
 			totalWait += waitS
+			shipWait += waitS
 
 			fillDrainStart := arrivalAtGate.Add(time.Duration(waitS * float64(time.Second)))
 			fillDrainEnd := fillDrainStart.Add(time.Duration((fillTimeSec + drainTimeSec) * float64(time.Second)))
@@ -915,7 +951,7 @@ func (ga *GAScheduler) MultiStageOptimizeSync(req models.MultiStageOptimizeReque
 			route.GateSequence = append(route.GateSequence, gateSched)
 
 			tr := timeRange{Start: fillDrainStart, End: exitTime}
-			gateUsed[gid] = append(gateUsed[gid], tr)
+			gateUsed[gid] = insertSorted(gateUsed[gid], tr)
 			gateTotalTime[gid] += fillTimeSec + drainTimeSec + entryTimeS + exitTimeS
 			gateCount[gid]++
 
@@ -925,6 +961,9 @@ func (ga *GAScheduler) MultiStageOptimizeSync(req models.MultiStageOptimizeReque
 			route.TotalWaterUsedM3 += waterUsed
 
 			currentTime = departureTime
+		}
+		if shipTruncated {
+			conflictCount++
 		}
 		routeMap[ship.ShipID] = route
 	}
@@ -936,6 +975,7 @@ func (ga *GAScheduler) MultiStageOptimizeSync(req models.MultiStageOptimizeReque
 	sort.Slice(routes, func(i, j int) bool {
 		return routes[i].Priority > routes[j].Priority ||
 			(routes[i].Priority == routes[j].Priority &&
+				len(routes[i].GateSequence) > 0 && len(routes[j].GateSequence) > 0 &&
 				routes[i].GateSequence[0].ArrivalTime.Before(routes[j].GateSequence[0].ArrivalTime))
 	})
 
@@ -989,4 +1029,40 @@ func findGateFreeAfter(ranges []timeRange, after time.Time) time.Time {
 		}
 	}
 	return t
+}
+
+func findGateFreeAfterSorted(ranges []timeRange, after time.Time) time.Time {
+	if len(ranges) == 0 {
+		return after
+	}
+	lo, hi := 0, len(ranges)-1
+	for lo <= hi {
+		mid := lo + (hi-lo)/2
+		if ranges[mid].Start.After(after) {
+			hi = mid - 1
+		} else {
+			lo = mid + 1
+		}
+	}
+	t := after
+	for i := lo; i < len(ranges); i++ {
+		if t.Before(ranges[i].End) && t.After(ranges[i].Start.Add(-1*time.Second)) {
+			t = ranges[i].End
+		} else if !t.Before(ranges[i].Start) {
+			continue
+		} else {
+			break
+		}
+	}
+	return t
+}
+
+func insertSorted(ranges []timeRange, tr timeRange) []timeRange {
+	ranges = append(ranges, tr)
+	i := len(ranges) - 1
+	for i > 0 && ranges[i].Start.Before(ranges[i-1].Start) {
+		ranges[i], ranges[i-1] = ranges[i-1], ranges[i]
+		i--
+	}
+	return ranges
 }

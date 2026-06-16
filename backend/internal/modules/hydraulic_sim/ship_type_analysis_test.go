@@ -289,3 +289,54 @@ func findSpec(st models.ShipType) (*models.ShipTypeSpec, bool) {
 	}
 	return nil, false
 }
+
+func TestShipTypeAnalysis_ResistancePenalty(t *testing.T) {
+	sim := makeTestSimulator()
+	gate := makeTestGate()
+	reports := sim.ShipTypeAnalysisSync(gate, 7.5, 3.6, 0.85, nil)
+
+	for _, r := range reports {
+		spec, found := findSpec(r.ShipType)
+		if !found {
+			continue
+		}
+		occupancy := spec.ChamberOccupancy
+		if occupancy <= 0 {
+			occupancy = spec.LengthMax * spec.WidthMax / (gate.ChamberLength * gate.ChamberWidth)
+		}
+		resistancePenalty := 1.0 + spec.ResistanceCoeff*occupancy*10
+		if r.EfficiencyIndex > 0 {
+			upperBound := 100.0 / resistancePenalty
+			if r.EfficiencyIndex > upperBound+5 {
+				t.Errorf("ship %s: effIdx %f exceeds theoretical upper bound %f (resistancePenalty=%f)",
+					r.TypeName, r.EfficiencyIndex, upperBound, resistancePenalty)
+			}
+		}
+	}
+}
+
+func TestShipTypeAnalysis_ConflictRate_ContinuousModel(t *testing.T) {
+	sim := makeTestSimulator()
+	gate := makeTestGate()
+	reports := sim.ShipTypeAnalysisSync(gate, 7.5, 3.6, 0.85, nil)
+
+	var lowOccShip, highOccShip *models.ShipTypeEfficiencyReport
+	for _, r := range reports {
+		spec, found := findSpec(r.ShipType)
+		if !found {
+			continue
+		}
+		if spec.ChamberOccupancy < 0.1 && lowOccShip == nil {
+			lowOccShip = r
+		}
+		if spec.ChamberOccupancy > 0.4 && highOccShip == nil {
+			highOccShip = r
+		}
+	}
+	if lowOccShip != nil && highOccShip != nil {
+		if lowOccShip.ConflictRate > highOccShip.ConflictRate+0.05 {
+			t.Errorf("low occupancy ship (%s, conflict=%.3f) should not have higher conflict than high occupancy (%s, conflict=%.3f)",
+				lowOccShip.TypeName, lowOccShip.ConflictRate, highOccShip.TypeName, highOccShip.ConflictRate)
+		}
+	}
+}
